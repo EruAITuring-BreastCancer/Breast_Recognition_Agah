@@ -1,25 +1,8 @@
-# --- Veri ve Görselleştirme (Sürümleri serbest bıraktık) ---
-numpy
-pandas
-scikit-learn
-matplotlib
-pillow
-opencv-python
-torch
-tqdm
-tensorboard
-rich
-
-# --- Yardımcı Araçlar ---
-absl-py
-chex
-flax
-jax
-jaxlib
-optax
-orbax-checkpoint
-python-dotenv
-pyyaml
-fsspec
-h5py
-typing_extensions
+torch>=2.0.0
+torchvision>=0.15.0
+numpy>=1.24.0
+Pillow>=9.5.0
+tqdm>=4.65.0
+matplotlib>=3.7.0
+seaborn>=0.12.0
+scikit-learn>=1.2.0
