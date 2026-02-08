@@ -1,0 +1,196 @@
+import torch
+from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
+from torchvision import transforms
+from PIL import Image
+import numpy as np
+from pathlib import Path
+from typing import List, Tuple, Optional, Dict
+from collections import Counter
+
+
+class CustomImageDataset(Dataset):
+
+    def __init__(self, image_paths: List[str], labels: List[int],
+                 transform: Optional[transforms.Compose] = None):
+        self.image_paths = image_paths
+        self.labels = labels
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.image_paths)
+
+    def __getitem__(self, idx):
+        image = Image.open(self.image_paths[idx]).convert('RGB')
+        label = self.labels[idx]
+
+        if self.transform:
+            image = self.transform(image)
+
+        return image, label
+
+
+def get_train_transforms(image_size: int = 224) -> transforms.Compose:
+
+    return transforms.Compose([
+        transforms.RandomResizedCrop(image_size, scale=(0.8, 1.0)),
+
+        transforms.RandomHorizontalFlip(p=0.5),
+
+        transforms.RandomVerticalFlip(p=0.2),
+
+        transforms.RandomRotation(degrees=15),
+
+        transforms.ColorJitter(
+            brightness=0.2,
+            contrast=0.2,
+            saturation=0.2,
+            hue=0.1
+        ),
+
+        transforms.RandomGrayscale(p=0.1),
+
+        transforms.RandomPerspective(distortion_scale=0.2, p=0.3),
+
+        transforms.RandomApply([
+            transforms.GaussianBlur(kernel_size=3)
+        ], p=0.2),
+
+
+        transforms.RandomErasing(p=0.2, scale=(0.02, 0.15)),
+
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],  # ImageNet ortalamaları
+            std=[0.229, 0.224, 0.225]  # ImageNet standart sapmaları
+        )
+    ])
+
+
+def get_val_transforms(image_size: int = 224) -> transforms.Compose:
+    return transforms.Compose([
+        transforms.Resize(int(image_size * 1.14)),
+        transforms.CenterCrop(image_size),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225]
+        )
+    ])
+
+
+def calculate_class_weights(labels: List[int], num_classes: int) -> torch.Tensor:
+
+    class_counts = Counter(labels)
+    total_samples = len(labels)
+
+    weights = torch.zeros(num_classes)
+    for class_idx in range(num_classes):
+        count = class_counts.get(class_idx, 0)
+        if count > 0:
+            weights[class_idx] = total_samples / (num_classes * count)
+        else:
+            weights[class_idx] = 0.0
+
+    return weights
+
+
+def get_weighted_sampler(labels: List[int]) -> WeightedRandomSampler:
+
+    class_counts = Counter(labels)
+    num_samples = len(labels)
+
+    sample_weights = []
+    for label in labels:
+        weight = 1.0 / class_counts[label]
+        sample_weights.append(weight)
+
+    sample_weights = torch.DoubleTensor(sample_weights)
+
+    # Sampler oluştur
+    sampler = WeightedRandomSampler(
+        weights=sample_weights,
+        num_samples=num_samples,
+        replacement=True  # Tekrar örneklemeye izin ver
+    )
+
+    return sampler
+
+
+def create_dataloaders(
+        train_image_paths: List[str],
+        train_labels: List[int],
+        val_image_paths: List[str],
+        val_labels: List[int],
+        batch_size: int = 32,
+        num_workers: int = 4,
+        image_size: int = 224,
+        use_weighted_sampler: bool = True
+) -> Tuple[DataLoader, DataLoader, Dict]:
+
+    train_transform = get_train_transforms(image_size)
+    val_transform = get_val_transforms(image_size)
+
+    # Datasets
+    train_dataset = CustomImageDataset(train_image_paths, train_labels, train_transform)
+    val_dataset = CustomImageDataset(val_image_paths, val_labels, val_transform)
+
+    num_classes = max(max(train_labels), max(val_labels)) + 1
+    train_class_counts = Counter(train_labels)
+    val_class_counts = Counter(val_labels)
+
+    print("\n=== Veri Seti İstatistikleri ===")
+    print(f"Toplam sınıf sayısı: {num_classes}")
+    print(f"\nEğitim seti: {len(train_labels)} örnek")
+    for class_idx in range(num_classes):
+        count = train_class_counts.get(class_idx, 0)
+        percentage = (count / len(train_labels)) * 100
+        print(f"  Sınıf {class_idx}: {count} örnek ({percentage:.2f}%)")
+
+    print(f"\nValidation seti: {len(val_labels)} örnek")
+    for class_idx in range(num_classes):
+        count = val_class_counts.get(class_idx, 0)
+        percentage = (count / len(val_labels)) * 100
+        print(f"  Sınıf {class_idx}: {count} örnek ({percentage:.2f}%)")
+
+    # Sınıf ağırlıklarını hesapla (loss için)
+    class_weights = calculate_class_weights(train_labels, num_classes)
+
+    # DataLoaders
+    if use_weighted_sampler:
+        sampler = get_weighted_sampler(train_labels)
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=batch_size,
+            sampler=sampler,
+            num_workers=num_workers,
+            pin_memory=True
+        )
+        print("\n✓ WeightedRandomSampler aktif - Her batch'te dengeli sınıf dağılımı sağlanacak")
+    else:
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=num_workers,
+            pin_memory=True
+        )
+        print("\n✗ WeightedRandomSampler kullanılmıyor - Standart shuffle aktif")
+
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True
+    )
+
+    info = {
+        'num_classes': num_classes,
+        'class_weights': class_weights,
+        'train_size': len(train_labels),
+        'val_size': len(val_labels),
+        'train_class_counts': train_class_counts,
+        'val_class_counts': val_class_counts
+    }
+
+    return train_loader, val_loader, info

@@ -1,0 +1,25 @@
+# --- Veri ve Görselleştirme (Sürümleri serbest bıraktık) ---
+numpy
+pandas
+scikit-learn
+matplotlib
+pillow
+opencv-python
+torch
+tqdm
+tensorboard
+rich
+
+# --- Yardımcı Araçlar ---
+absl-py
+chex
+flax
+jax
+jaxlib
+optax
+orbax-checkpoint
+python-dotenv
+pyyaml
+fsspec
+h5py
+typing_extensions
