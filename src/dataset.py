@@ -31,30 +31,18 @@ def get_train_transforms(image_size: int = 224) -> transforms.Compose:
 
     return transforms.Compose([
         transforms.RandomResizedCrop(image_size, scale=(0.8, 1.0)),
-
         transforms.RandomHorizontalFlip(p=0.5),
-
         transforms.RandomVerticalFlip(p=0.2),
-
         transforms.RandomRotation(degrees=15),
 
         transforms.ColorJitter(
             brightness=0.2,
             contrast=0.2,
-            saturation=0.2,
-            hue=0.1
         ),
-
-        transforms.RandomGrayscale(p=0.1),
-
-        transforms.RandomPerspective(distortion_scale=0.2, p=0.3),
-
+        transforms.RandomAdjustSharpness(sharpness_factor=2, p=0.3),
         transforms.RandomApply([
-            transforms.GaussianBlur(kernel_size=3)
+            transforms.GaussianBlur(kernel_size=3) # CLAHE de kullanabiliriz ilk bunu deneyeyim sonra bakıcaz
         ], p=0.2),
-
-
-        transforms.RandomErasing(p=0.2, scale=(0.02, 0.15)),
 
         transforms.ToTensor(),
         transforms.Normalize(
