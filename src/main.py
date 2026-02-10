@@ -1,5 +1,4 @@
 import torch
-from pathlib import Path
 from models import get_model
 from dataset import create_dataloaders
 from train import Trainer, test_model
@@ -154,6 +153,11 @@ def main():
     print("=" * 70)
     print(f"\nEn iyi validation accuracy: {trainer.best_val_acc:.2f}%")
     print(f"Test accuracy: {test_results['accuracy']:.2f}%")
+    print(f"f1_macro: {test_results['f1_macro']:.2f}%")
+    print(f"f1_weighted: {test_results['f1_weighted']:.2f}%")
+    print(f"f1_per_class: {test_results['f1_per_class:']:.2f}%")
+    print(f"classification_report: {test_results['classification_report']:.2f}%")
+    print(f"confusion_matrix: {test_results['confusion_matrix']:.2f}%")
     print(f"\nSonuçlar '{CONFIG['output_dir']}' klasörüne kaydedildi:")
     print(f"  - best_model.pth (en iyi model)")
     print(f"  - last_model.pth (son model)")

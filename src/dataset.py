@@ -2,8 +2,6 @@ import torch
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from torchvision import transforms
 from PIL import Image
-import numpy as np
-from pathlib import Path
 from typing import List, Tuple, Optional, Dict
 from collections import Counter
 

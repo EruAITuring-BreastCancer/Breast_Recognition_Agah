@@ -1,4 +1,3 @@
-import torch
 import torch.nn as nn
 from torchvision import models
 from typing import Optional
