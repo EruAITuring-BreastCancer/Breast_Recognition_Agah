@@ -5,6 +5,7 @@ import configparser
 from deap.benchmarks import sphere, rastrigin, schwefel, rosenbrock, ackley, rand, plane, cigar, h1, himmelblau, \
     schaffer, griewank, rastrigin_scaled, rastrigin_skew, bohachevsky
 import os
+from train_utils import train_evaluate_model
 
 
 
@@ -21,9 +22,8 @@ class Config:
         _self.FOOD_NUMBER = int(_self.NUMBER_OF_POPULATION / 2)
         # _self.DIMENSION = int(config['DEFAULT']['Dimension'])
         _self.DIMENSION = 8
-        # batch_size, learning_rate, beta_1, beta_2, epoch, l1_reg, l2_reg, dropout
-        _self.UPPER_BOUND = [1, 0.002, 0.99999, 0.99999, 1, 0.002, 0.002, 0.5]
-        _self.LOWER_BOUND = [0, 0.0005, 0.5, 0.5, 0, 0.0005, 0.0005, 0]
+        _self.LOWER_BOUND = [0, 1e-5, 0.80, 0.900, 0.0, 0.0, 0.0, 0.5]
+        _self.UPPER_BOUND = [1, 1e-2, 0.99, 0.999, 1e-3, 1e-2, 0.5, 5.0]
         _self.RUN_TIME = int(config['DEFAULT']['RunTime'])
         _self.SHOW_PROGRESS = bool(config['REPORT']['ShowProgress'] == 'True')
         _self.PRINT_PARAMETERS = bool(config['REPORT']['PrintParameters'] == 'True')
@@ -123,32 +123,46 @@ class Config:
                 calc_value -= 1
             return value_array[calc_value]
 
-        # 0 -> batch_size
-        # 1 -> learning_rate
-        # 2 -> beta_1
-        # 3 -> beta_2
-        # 4 -> epoch
-        # 5 -> l1_regularization
-        # 6 -> l2_regularization
-        # 7 -> dropout_rate
-        batch_size = float_decoder(individual[0], 5, [4, 8, 16, 32, 64])
-        epoch_size = float_decoder(individual[4], 5, [20, 40, 60, 80, 100])
+        batch_size = float_decoder(individual[0], 4, [8, 16, 32, 64])
         learning_rate = round(individual[1], 5)
         beta_1 = round(individual[2], 5)
         beta_2 = round(individual[3], 5)
-        l1_reg = round(individual[5], 5)
-        l2_reg = round(individual[6], 5)
-        dropout = round(individual[7], 5)
-        print("batch_size: ", batch_size, "learning_rate: ", learning_rate, "beta_1: ", beta_1, "beta_2: ", beta_2,
-              "epoch_size: ", epoch_size, "l1_reg: ", l1_reg, "l2_reg: ", l2_reg, "dropout: ", dropout)
+        l1_reg = round(individual[4], 5)
+        l2_reg = round(individual[5], 5)
+        dropout = round(individual[6], 5)
+        gamma = round(individual[7], 2)
 
-        """ret_val = get_fitness(batch_size=batch_size, learning_rate=learning_rate, beta_1=beta_1, beta_2=beta_2,
-                              epochs=epoch_size, l1_reg=l1_reg,
-                              l2_reg=l2_reg, dropout=dropout, s=service_name)
-"""
-#        return ret_val
+        print(f"Gen -> Batch:{batch_size} LR:{learning_rate:.5f} Gamma:{gamma:.2f} Drop:{dropout:.2f}")
 
-        return 0
+        params = {
+            'batch_size': batch_size,
+            'lr': learning_rate,
+            'beta1': beta_1,
+            'beta2': beta_2,
+            'l1_reg': l1_reg,
+            'l2_reg': l2_reg,
+            'dropout': dropout,
+            'gamma': gamma
+        }
+
+        try:
+            result = train_evaluate_model(params)
+
+
+            return {
+                'valid_accuracy': result['f1_score'],
+                'test_accuracy': result['f1_score'],
+                'model_name': f"ConvNext_G{gamma}_BS{batch_size}"
+            }
+
+        except Exception as e:
+            print(f"Training Crash: {e}")
+            return {
+                'valid_accuracy': 0.0,
+                'test_accuracy': 0.0,
+                'model_name': "Failed"
+            }
+
     # ######FUNCTION_LIST######
     objFunctionSelector = {
         'sphere': sphere,
