@@ -4,6 +4,10 @@ from torchvision import transforms
 from PIL import Image
 from typing import List, Tuple, Optional, Dict
 from collections import Counter
+from sklearn.model_selection import train_test_split
+import os
+import pandas as pd
+
 
 
 class CustomImageDataset(Dataset):
@@ -180,3 +184,54 @@ def create_dataloaders(
     }
 
     return train_loader, val_loader, info
+
+
+def prepare_and_split_data(csv_path: str, val_size: float = 0.15, test_size: float = 0.15, random_state: int = 42):
+    """
+    CSV dosyasını okur, yolları doğrular, etiketleri mapler ve veri setini 3'e böler.
+    """
+    print(f"CSV okunuyor: {csv_path}")
+    df = pd.read_csv(csv_path)
+
+    # PyTorch etiketleri 0'dan başlamalıdır
+    label_map = {1: 0, 2: 1, 4: 2, 5: 3}
+
+    image_paths = []
+    labels = []
+    missing_count = 0
+
+    for index, row in df.iterrows():
+        img_path = row['image_path']
+        raw_label = row['birads_label']
+
+        if raw_label not in label_map:
+            continue
+
+        # Harici diskte dosya gerçekten var mı kontrolü
+        if os.path.exists(img_path):
+            image_paths.append(img_path)
+            labels.append(label_map[raw_label])
+        else:
+            missing_count += 1
+
+    print(f"✓ Toplam {len(image_paths)} geçerli görüntü eşleşti.")
+    if missing_count > 0:
+        print(f"✗ Uyarı: CSV'de olup diskte bulunamayan {missing_count} görüntü var.")
+
+    # 1. Aşama: Önce Test setini ayır
+    train_val_paths, test_paths, train_val_labels, test_labels = train_test_split(
+        image_paths, labels, test_size=test_size, random_state=random_state, stratify=labels
+    )
+
+    # 2. Aşama: Kalanı Train ve Val olarak ayır
+    # val_size oranını, tüm veri üzerinden değil, kalan veri üzerinden hesaplamalıyız
+    val_ratio_adjusted = val_size / (1.0 - test_size)
+
+    train_paths, val_paths, train_labels, val_labels = train_test_split(
+        train_val_paths, train_val_labels, test_size=val_ratio_adjusted, random_state=random_state,
+        stratify=train_val_labels
+    )
+
+    print(f"Veri Dağılımı: Train({len(train_paths)}) | Val({len(val_paths)}) | Test({len(test_paths)})")
+
+    return train_paths, train_labels, val_paths, val_labels, test_paths, test_labels

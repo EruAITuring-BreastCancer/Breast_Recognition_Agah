@@ -1,24 +1,49 @@
 import pandas as pd
-from pathlib import Path
+import os
 
-target_path = Path("/opt/project/data/INbreast.csv")
-df = pd.read_csv(target_path, sep=';')
-df.columns = df.columns.str.strip()
+# 1. Klasör yollarını senin belirttiğin yapıya göre tanımlıyoruz
+mapping = {
+    'inbreast': '/media/agah/Sata/Breast_veriler/INBreast_Cropped/INbreast_Cropped-20260225T105615Z-1-001/INbreast_Cropped/',
+    'rsna': '/media/agah/Sata/Breast_veriler/RSNA_Cropped/RSNA_Cropped/',
+    'vindr': '/media/agah/Sata/Breast_veriler/Vindr/VinDR_Cropped/VinDr_Cropped/'
+}
 
-# 1. ADIM: Bi-Rads 3 ve 6 olan satırları silmek
-# SQL: DELETE FROM df WHERE `Bi-Rads` IN ('3', '6')
-# Pandas'ta bunu "3 ve 6 olmayanları tut" şeklinde yaparız (~ işareti 'değil' demektir)
-silinecekler = ['3', '6', 3, 6] # Hem sayı hem string ihtimaline karşı
-df = df[~df['Bi-Rads'].isin(silinecekler)]
 
-# 2. ADIM: 4a, 4b, 4c değerlerini '4' altında toplamak
-# SQL: UPDATE df SET `Bi-Rads` = '4' WHERE `Bi-Rads` IN ('4a', '4b', '4c')
-degistirilecekler = {'4a': '4', '4b': '4', '4c': '4'}
-df['Bi-Rads'] = df['Bi-Rads'].replace(degistirilecekler)
+def update_csv_paths():
+    base_dir = "/media/agah/Sata/Breast_veriler/Etiketler/"
+    csv_input = os.path.join(base_dir, "master_dataset.csv")
+    csv_output = os.path.join(base_dir, "master_dataset_local.csv")
 
-# 3. ADIM: Sonucu kontrol edelim
-print("--- Güncel Bi-Rads Dağılımı ---")
-print(df['Bi-Rads'].value_counts())
+    # CSV'yi oku
+    df = pd.read_csv(csv_input)
+    df.columns = df.columns.str.strip()
 
-# İSTEĞE BAĞLI: Temizlenmiş veriyi yeni bir CSV olarak kaydetmek
-df.to_csv('/opt/project/data/INbreast_cleaned.csv', index=False, sep=';')
+    def construct_new_path(row):
+        source = str(row['dataset_source']).lower().strip()
+        # Eski Colab yolundan sadece dosya ismini al (Örn: MG_123.png)
+        filename = os.path.basename(row['image_path'])
+
+        # İlgili kaynağın SATA üzerindeki yolunu al
+        new_base = mapping.get(source)
+
+        if new_base:
+            return os.path.join(new_base, filename)
+        return row['image_path']  # Eşleşme yoksa (hata olmaması için) dokunma
+
+    # Yolları güncelle
+    df['image_path'] = df.apply(construct_new_path, axis=1)
+
+    # Yeni dosyayı kaydet
+    df.to_csv(csv_output, index=False)
+    print(f"✅ İşlem tamamlandı! Yeni dosya: {csv_output}")
+
+    # Örnek bir dosyanın diskte gerçekten olup olmadığını test edelim
+    sample_path = df['image_path'].iloc[0]
+    if os.path.exists(sample_path):
+        print(f"🔍 Doğrulama: İlk dosya diskte bulundu! -> {sample_path}")
+    else:
+        print(f"⚠️ Uyarı: İlk dosya bulunamadı, klasör isimlerini kontrol et: {sample_path}")
+
+
+if __name__ == "__main__":
+    update_csv_paths()

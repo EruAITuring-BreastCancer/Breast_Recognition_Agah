@@ -1,11 +1,13 @@
 import torch
 from models import get_model
-from dataset import create_dataloaders
+# Yeni fonksiyonumuzu da import ediyoruz
+from dataset import create_dataloaders, prepare_and_split_data, CustomImageDataset, get_val_transforms
 from train import Trainer, test_model
+from torch.utils.data import DataLoader
+from pathlib import Path
 
 
 def main():
-
     CONFIG = {
         'model_name': 'convnext',
         'model_size': 'tiny',
@@ -21,6 +23,8 @@ def main():
         'learning_rate': 1e-3,
         'weight_decay': 1e-4,
 
+        'csv_path': '/media/agah/Sata/Breast_veriler/Etiketler/master_dataset_local.csv',  # CSV dosyasının yolu
+
         'output_dir': 'outputs',
         'seed': 42
     }
@@ -35,44 +39,19 @@ def main():
 
     print("\n[1/4] Veri hazırlanıyor...")
 
+    # dataset.py içindeki yeni fonksiyonumuzu çağırıyoruz
+    train_paths, train_labels, val_paths, val_labels, test_paths, test_labels = prepare_and_split_data(
+        csv_path=CONFIG['csv_path'],
+        val_size=0.15,
+        test_size=0.15,
+        random_state=CONFIG['seed']
+    )
 
-    # Gerçek yolları ekleyeceğim
-    train_image_paths = []
-    train_labels = []
-    val_image_paths = []
-    val_labels = []
-    test_image_paths = []
-    test_labels = []
-
-    from pathlib import Path
-    data_dir = Path('your_dataset')
-
-    for class_idx, class_name in enumerate(sorted(data_dir.iterdir())):
-        if class_name.is_dir():
-            images = list(class_name.glob('*.jpg'))
-
-            train_split = int(len(images) * 0.7)
-            val_split = int(len(images) * 0.85)
-
-            train_imgs = images[:train_split]
-            val_imgs = images[train_split:val_split]
-            test_imgs = images[val_split:]
-
-            train_image_paths.extend([str(img) for img in train_imgs])
-            train_labels.extend([class_idx] * len(train_imgs))
-
-            val_image_paths.extend([str(img) for img in val_imgs])
-            val_labels.extend([class_idx] * len(val_imgs))
-
-            test_image_paths.extend([str(img) for img in test_imgs])
-            test_labels.extend([class_idx] * len(test_imgs))
-
-
-
+    # Train ve Val DataLoader'larını oluştur
     train_loader, val_loader, data_info = create_dataloaders(
-        train_image_paths=train_image_paths,
+        train_image_paths=train_paths,
         train_labels=train_labels,
-        val_image_paths=val_image_paths,
+        val_image_paths=val_paths,
         val_labels=val_labels,
         batch_size=CONFIG['batch_size'],
         num_workers=CONFIG['num_workers'],
@@ -80,11 +59,9 @@ def main():
         use_weighted_sampler=CONFIG['use_weighted_sampler']
     )
 
-    from dataset import CustomImageDataset, get_val_transforms
-    from torch.utils.data import DataLoader
-
+    # Test DataLoader'ını oluştur
     test_dataset = CustomImageDataset(
-        test_image_paths,
+        test_paths,
         test_labels,
         transform=get_val_transforms(CONFIG['image_size'])
     )
@@ -94,7 +71,6 @@ def main():
         shuffle=False,
         num_workers=CONFIG['num_workers']
     )
-
 
     print(f"\n[2/4] Model oluşturuluyor...")
 
@@ -138,8 +114,8 @@ def main():
         model.load_state_dict(checkpoint['model_state_dict'])
         print(f"✓ En iyi model yüklendi (Epoch {checkpoint['epoch'] + 1})")
 
-
-    class_names = [f'Class_{i}' for i in range(CONFIG['num_classes'])]
+    # Modeli test et
+    class_names = ['BIRADS-1', 'BIRADS-2', 'BIRADS-4', 'BIRADS-5']
     test_results = test_model(
         model=model,
         test_loader=test_loader,
@@ -155,15 +131,12 @@ def main():
     print(f"Test accuracy: {test_results['accuracy']:.2f}%")
     print(f"f1_macro: {test_results['f1_macro']:.2f}%")
     print(f"f1_weighted: {test_results['f1_weighted']:.2f}%")
-    print(f"f1_per_class: {test_results['f1_per_class:']:.2f}%")
-    print(f"classification_report: {test_results['classification_report']:.2f}%")
-    print(f"confusion_matrix: {test_results['confusion_matrix']:.2f}%")
-    print(f"\nSonuçlar '{CONFIG['output_dir']}' klasörüne kaydedildi:")
-    print(f"  - best_model.pth (en iyi model)")
-    print(f"  - last_model.pth (son model)")
-    print(f"  - training_history.png (eğitim grafikleri)")
-    print(f"  - confusion_matrix.png (karmaşıklık matrisi)")
-    print(f"  - test_results.json (detaylı test sonuçları)")
+
+    print("\nSınıf Bazlı F1 Skorları:")
+    for class_name, f1_val in test_results['f1_per_class'].items():
+        print(f"  {class_name}: {f1_val:.2f}%")
+
+    print(f"\nSonuçlar '{CONFIG['output_dir']}' klasörüne kaydedildi.")
     print("=" * 70)
 
 

@@ -26,6 +26,7 @@ class Trainer:
             train_loader: DataLoader,
             val_loader: DataLoader,
             num_classes: int,
+            model_name: str = 'model',  # <--- YENİ EKLENDİ
             class_weights: Optional[torch.Tensor] = None,
             device: str = 'cuda',
             learning_rate: float = 1e-3,
@@ -45,6 +46,7 @@ class Trainer:
             output_dir: Model ve sonuçların kaydedileceği dizin
         """
         self.model = model.to(device)
+        self.model_name = model_name  # <--- YENİ EKLENDİ
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.num_classes = num_classes
