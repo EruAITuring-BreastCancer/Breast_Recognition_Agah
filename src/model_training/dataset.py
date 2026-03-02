@@ -4,9 +4,6 @@ from torchvision import transforms
 from PIL import Image
 from typing import List, Tuple, Optional, Dict
 from collections import Counter
-from sklearn.model_selection import train_test_split
-import os
-import pandas as pd
 
 
 
@@ -22,7 +19,13 @@ class CustomImageDataset(Dataset):
         return len(self.image_paths)
 
     def __getitem__(self, idx):
-        image = Image.open(self.image_paths[idx]).convert('RGB')
+        try:
+            image = Image.open(self.image_paths[idx]).convert('RGB')
+        except Exception as e:
+            print(f"\nUyarı: Bozuk dosya atlandı -> {self.image_paths[idx]}")
+            new_idx = (idx + 1) % len(self.image_paths)
+            return self.__getitem__(new_idx)
+
         label = self.labels[idx]
 
         if self.transform:
@@ -31,27 +34,24 @@ class CustomImageDataset(Dataset):
         return image, label
 
 
-def get_train_transforms(image_size: int = 224) -> transforms.Compose:
 
+from torchvision import transforms
+
+
+def get_train_transforms(image_size: int = 224) -> transforms.Compose:
     return transforms.Compose([
         transforms.RandomResizedCrop(image_size, scale=(0.8, 1.0)),
         transforms.RandomHorizontalFlip(p=0.5),
         transforms.RandomVerticalFlip(p=0.2),
-        transforms.RandomRotation(degrees=15),
 
-        transforms.ColorJitter(
-            brightness=0.2,
-            contrast=0.2,
-        ),
-        transforms.RandomAdjustSharpness(sharpness_factor=2, p=0.3),
-        transforms.RandomApply([
-            transforms.GaussianBlur(kernel_size=3) # CLAHE de kullanabiliriz ilk bunu deneyeyim sonra bakıcaz
-        ], p=0.2),
+        # Ezber bozmak için eklenen transformlar
+        transforms.RandomRotation(degrees=15),
+        transforms.ColorJitter(brightness=0.1, contrast=0.1),
 
         transforms.ToTensor(),
         transforms.Normalize(
-            mean=[0.485, 0.456, 0.406],  # ImageNet ortalamaları
-            std=[0.229, 0.224, 0.225]  # ImageNet standart sapmaları
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225]
         )
     ])
 
@@ -186,35 +186,52 @@ def create_dataloaders(
     return train_loader, val_loader, info
 
 
-def prepare_and_split_data(csv_path: str, val_size: float = 0.15, test_size: float = 0.15, random_state: int = 42):
+import os
+import pandas as pd
+from sklearn.model_selection import train_test_split
+
+def prepare_and_split_data(csv_path: str, view_type: str = 'ALL', val_size: float = 0.15, test_size: float = 0.15, random_state: int = 42):
     """
-    CSV dosyasını okur, yolları doğrular, etiketleri mapler ve veri setini 3'e böler.
+    CSV dosyasını okur, yolları doğrular, açıya (CC/MLO) göre filtreler, etiketleri mapler ve veri setini 3'e böler.
     """
-    print(f"CSV okunuyor: {csv_path}")
+    print(f"\nCSV okunuyor: {csv_path}")
     df = pd.read_csv(csv_path)
 
-    # PyTorch etiketleri 0'dan başlamalıdır
+    # 1. PANDAS'IN GÖRDÜĞÜ SÜTUNLARI EKRANA YAZDIR
+    print(f"Mevcut Sütunlar: {df.columns.tolist()}")
+
+    # 2. GÖRÜNMEZ BOŞLUKLARI OTOMATİK TEMİZLE
+    df.columns = df.columns.str.strip()
+
+    # 3. 4 SINIFLI ETİKET HARİTALAMASI (Değiştirilmedi)
     label_map = {1: 0, 2: 1, 4: 2, 5: 3}
+    print("[BİLGİ] 4 Sınıflı (Multi-class) sınıflandırma aktif.")
 
     image_paths = []
     labels = []
     missing_count = 0
 
     for index, row in df.iterrows():
-        img_path = row['image_path']
-        raw_label = row['birads_label']
+        img_path = str(row['image_path'])
+        raw_label = row['BI_RADS']
 
         if raw_label not in label_map:
             continue
 
-        # Harici diskte dosya gerçekten var mı kontrolü
+        # 4. AÇI FİLTRESİ (CC veya MLO)
+        if view_type != 'ALL':
+            # Dosya adında CC veya MLO geçmiyor ise bu resmi atla
+            if view_type not in img_path.upper():
+                continue
+
+        # 5. Harici diskte dosya gerçekten var mı kontrolü
         if os.path.exists(img_path):
             image_paths.append(img_path)
             labels.append(label_map[raw_label])
         else:
             missing_count += 1
 
-    print(f"✓ Toplam {len(image_paths)} geçerli görüntü eşleşti.")
+    print(f"✓ Toplam {len(image_paths)} geçerli '{view_type}' görüntüsü eşleşti.")
     if missing_count > 0:
         print(f"✗ Uyarı: CSV'de olup diskte bulunamayan {missing_count} görüntü var.")
 
@@ -224,7 +241,6 @@ def prepare_and_split_data(csv_path: str, val_size: float = 0.15, test_size: flo
     )
 
     # 2. Aşama: Kalanı Train ve Val olarak ayır
-    # val_size oranını, tüm veri üzerinden değil, kalan veri üzerinden hesaplamalıyız
     val_ratio_adjusted = val_size / (1.0 - test_size)
 
     train_paths, val_paths, train_labels, val_labels = train_test_split(
@@ -232,6 +248,6 @@ def prepare_and_split_data(csv_path: str, val_size: float = 0.15, test_size: flo
         stratify=train_val_labels
     )
 
-    print(f"Veri Dağılımı: Train({len(train_paths)}) | Val({len(val_paths)}) | Test({len(test_paths)})")
+    print(f"Veri Dağılımı: Train({len(train_paths)}) | Val({len(val_paths)}) | Test({len(test_paths)})\n")
 
     return train_paths, train_labels, val_paths, val_labels, test_paths, test_labels

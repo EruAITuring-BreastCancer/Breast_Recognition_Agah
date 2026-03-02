@@ -17,6 +17,7 @@ from sklearn.metrics import classification_report, confusion_matrix, f1_score
 import seaborn as sns
 
 
+
 class Trainer:
     """Model eğitimi için ana sınıf."""
 
@@ -31,7 +32,8 @@ class Trainer:
             device: str = 'cuda',
             learning_rate: float = 1e-3,
             weight_decay: float = 1e-4,
-            output_dir: str = 'outputs'
+            output_dir: str = 'outputs',
+            num_epochs: int = 30  # <--- YENİ EKLENDİ (Scheduler için gerekli)
     ):
         """
         Args:
@@ -58,21 +60,19 @@ class Trainer:
         if class_weights is not None:
             class_weights = class_weights.to(device)
         self.criterion = nn.CrossEntropyLoss(weight=class_weights)
-
         # Optimizer
-        self.optimizer = optim.AdamW(
+        self.optimizer = optim.SGD(
             model.parameters(),
             lr=learning_rate,
+            momentum=0.9,
             weight_decay=weight_decay
         )
 
-        # Learning rate scheduler
-        self.scheduler = ReduceLROnPlateau(
+        # Learning rate scheduler (CosineAnnealingLR'a geçildi)
+        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
             self.optimizer,
-            mode='min',
-            factor=0.5,
-            patience=5,
-            verbose=True
+            T_max=num_epochs,
+            eta_min=1e-6
         )
 
         # Eğitim geçmişi
@@ -191,7 +191,7 @@ class Trainer:
 
             val_loss, val_acc, val_f1 = self.validate(epoch)
 
-            self.scheduler.step(val_loss)
+            self.scheduler.step()
             current_lr = self.optimizer.param_groups[0]['lr']
 
             self.history['train_loss'].append(train_loss)
@@ -216,17 +216,17 @@ class Trainer:
                 if save_best:
                     self.save_checkpoint(
                         epoch,
-                        filename='best_model.pth',
+                        filename=f'{self.model_name}_best_model.pth',  # <--- GÜNCELLENDİ
                         is_best=True
                     )
 
             print("-" * 60)
 
-        print(f"\n=== Eğitim Tamamlandı ===")
-        print(f"En iyi validation F1-score: {self.best_val_f1:.2f}% (Epoch {self.best_epoch + 1})")
-        print(f"En iyi validation accuracy: {self.best_val_acc:.2f}% (Epoch {self.best_epoch + 1})")
+            print(f"\n=== Eğitim Tamamlandı ===")
+            print(f"En iyi validation F1-score: {self.best_val_f1:.2f}% (Epoch {self.best_epoch + 1})")
+            print(f"En iyi validation accuracy: {self.best_val_acc:.2f}% (Epoch {self.best_epoch + 1})")
 
-        self.save_checkpoint(num_epochs - 1, filename='last_model.pth')
+        self.save_checkpoint(num_epochs - 1, filename=f'{self.model_name}_last_model.pth')  # <--- GÜNCELLENDİ
 
         self.plot_history()
 

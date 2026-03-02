@@ -77,6 +77,34 @@ class EfficientNetV2Model(nn.Module):
         return self.model(x)
 
 
+class ResNetModel(nn.Module):
+    """ResNet model wrapper."""
+
+    def __init__(self, num_classes: int, model_size: str = '50', pretrained: bool = True):
+        super(ResNetModel, self).__init__()
+
+        if model_size == '18':
+            self.model = models.resnet18(weights='IMAGENET1K_V1' if pretrained else None)
+            in_features = 512
+        elif model_size == '34':
+            self.model = models.resnet34(weights='IMAGENET1K_V1' if pretrained else None)
+            in_features = 512
+        elif model_size == '50':
+            self.model = models.resnet50(weights='IMAGENET1K_V1' if pretrained else None)
+            in_features = 2048
+        else:
+            raise ValueError(f"Geçersiz model boyutu: {model_size}. (18, 34 veya 50 kullanın)")
+
+        # Son katmanı değiştir (Dropout eklendi)
+        self.model.fc = nn.Sequential(
+            nn.Dropout(p=0.0),
+            nn.Linear(in_features, num_classes)
+        )
+
+    def forward(self, x):
+        return self.model(x)
+
+
 def get_model(model_name: str, num_classes: int, model_size: Optional[str] = None,
               pretrained: bool = True) -> nn.Module:
     model_name = model_name.lower()
@@ -93,6 +121,10 @@ def get_model(model_name: str, num_classes: int, model_size: Optional[str] = Non
         size = model_size or 's'
         return EfficientNetV2Model(num_classes, size, pretrained)
 
+    elif model_name == 'resnet':
+        size = model_size or '50'
+        return ResNetModel(num_classes, size, pretrained)
+
     else:
         raise ValueError(f"Bilinmeyen model: {model_name}. "
-                         f"Kullanılabilir: 'convnext', 'mobilenet', 'efficientnet'")
+                         f"Kullanılabilir: 'convnext', 'mobilenet', 'efficientnet', 'resnet'")

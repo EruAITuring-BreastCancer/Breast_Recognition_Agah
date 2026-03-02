@@ -1,49 +1,65 @@
 import pandas as pd
 import os
+import re
 
-# 1. Klasör yollarını senin belirttiğin yapıya göre tanımlıyoruz
-mapping = {
-    'inbreast': '/media/agah/Sata/Breast_veriler/INBreast_Cropped/INbreast_Cropped-20260225T105615Z-1-001/INbreast_Cropped/',
-    'rsna': '/media/agah/Sata/Breast_veriler/RSNA_Cropped/RSNA_Cropped/',
-    'vindr': '/media/agah/Sata/Breast_veriler/Vindr/VinDR_Cropped/VinDr_Cropped/'
-}
+# Yolları Tanımlayalım
+base_dir = "/media/agah/Sata/Breast_veriler/"
+image_folder = os.path.join(base_dir, "Teknofest_Breast_PNG/PNG_Görüntüler/")
+input_csv = os.path.join(base_dir, "Etiketler/nihai_egitim_verisi.csv")  # Elindeki CSV
+output_csv = os.path.join(base_dir, "Etiketler/teknofest_final_master.csv")
 
 
-def update_csv_paths():
-    base_dir = "/media/agah/Sata/Breast_veriler/Etiketler/"
-    csv_input = os.path.join(base_dir, "master_dataset.csv")
-    csv_output = os.path.join(base_dir, "master_dataset_local.csv")
+def create_exact_path_csv():
+    if not os.path.exists(input_csv):
+        print(f"❌ CSV dosyası bulunamadı: {input_csv}")
+        return
 
-    # CSV'yi oku
-    df = pd.read_csv(csv_input)
-    df.columns = df.columns.str.strip()
+    # 1. CSV'yi oku ve CaseNumber'ı temizle (822670189.0 -> 822670189)
+    df_labels = pd.read_csv(input_csv)
+    df_labels.columns = df_labels.columns.str.strip()
+    df_labels['CaseNumber'] = pd.to_numeric(df_labels['CaseNumber'], errors='coerce').fillna(0).astype(int).astype(str)
 
-    def construct_new_path(row):
-        source = str(row['dataset_source']).lower().strip()
-        # Eski Colab yolundan sadece dosya ismini al (Örn: MG_123.png)
-        filename = os.path.basename(row['image_path'])
+    # 2. Klasördeki gerçek dosya isimlerini al (Sadece isimleri okur, resimleri açmaz)
+    print("🔍 Gerçek dosya isimleri taranıyor...")
+    all_files = [f for f in os.listdir(image_folder) if f.lower().endswith('.png')]
 
-        # İlgili kaynağın SATA üzerindeki yolunu al
-        new_base = mapping.get(source)
+    file_data = []
+    # Dosya isminin içindeki 7-12 haneli vaka numarasını bulacak kural
+    pattern = re.compile(r'(\d{7,12})')
 
-        if new_base:
-            return os.path.join(new_base, filename)
-        return row['image_path']  # Eşleşme yoksa (hata olmaması için) dokunma
+    for filename in all_files:
+        match = pattern.search(filename)
+        if match:
+            case_id = match.group(1)
+            file_data.append({
+                'CaseNumber': str(case_id),
+                'image_path': os.path.join(image_folder, filename)  # Dosya ismi neyse onu kullanır
+            })
 
-    # Yolları güncelle
-    df['image_path'] = df.apply(construct_new_path, axis=1)
+    df_files = pd.DataFrame(file_data)
 
-    # Yeni dosyayı kaydet
-    df.to_csv(csv_output, index=False)
-    print(f"✅ İşlem tamamlandı! Yeni dosya: {csv_output}")
+    if df_files.empty:
+        print("❌ Klasörde hiçbir PNG dosyası bulunamadı veya ID'ler okunamadı.")
+        return
 
-    # Örnek bir dosyanın diskte gerçekten olup olmadığını test edelim
-    sample_path = df['image_path'].iloc[0]
-    if os.path.exists(sample_path):
-        print(f"🔍 Doğrulama: İlk dosya diskte bulundu! -> {sample_path}")
+    # 3. CSV'deki etiketlerle, klasördeki gerçek yolları birleştir
+    final_df = pd.merge(df_files, df_labels, on='CaseNumber', how='inner')
+
+    # 4. İhtiyacımız olan sütunları seç ve kaydet
+    final_df = final_df[['image_path', 'BI_RADS', 'CaseNumber']]
+    final_df.to_csv(output_csv, index=False)
+
+    print("\n--- İŞLEM SONUCU ---")
+    print(f"📊 Toplam eşleşen ve oluşturulan satır sayısı: {len(final_df)}")
+
+    if not final_df.empty:
+        print(f"💾 Kayıt yeri: {output_csv}")
+        print("\nÖrnek Çıktılar (Gerçek dosya yolları):")
+        for path in final_df['image_path'].head(3):
+            print(path)
     else:
-        print(f"⚠️ Uyarı: İlk dosya bulunamadı, klasör isimlerini kontrol et: {sample_path}")
+        print("⚠️ HATA: Dosya isimleri tarandı ama CSV'deki numaralarla eşleşmedi.")
 
 
 if __name__ == "__main__":
-    update_csv_paths()
+    create_exact_path_csv()
