@@ -1,6 +1,8 @@
-.git
 .venv
-venv
+outputs*
 __pycache__
-*.pyc
+*.pth
+*.pt
 .idea
+.git
+data

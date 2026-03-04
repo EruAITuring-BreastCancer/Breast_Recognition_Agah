@@ -77,32 +77,44 @@ class EfficientNetV2Model(nn.Module):
         return self.model(x)
 
 
-class ResNetModel(nn.Module):
-    """ResNet model wrapper."""
 
-    def __init__(self, num_classes: int, model_size: str = '50', pretrained: bool = True):
-        super(ResNetModel, self).__init__()
+class HybridResNetTransformer(nn.Module):
+    def __init__(self, num_classes: int, pretrained: bool = True):
+        super(HybridResNetTransformer, self).__init__()
 
-        if model_size == '18':
-            self.model = models.resnet18(weights='IMAGENET1K_V1' if pretrained else None)
-            in_features = 512
-        elif model_size == '34':
-            self.model = models.resnet34(weights='IMAGENET1K_V1' if pretrained else None)
-            in_features = 512
-        elif model_size == '50':
-            self.model = models.resnet50(weights='IMAGENET1K_V1' if pretrained else None)
-            in_features = 2048
-        else:
-            raise ValueError(f"Geçersiz model boyutu: {model_size}. (18, 34 veya 50 kullanın)")
+        # ResNet-50 Omurgası
+        resnet = models.resnet50(weights='IMAGENET1K_V1' if pretrained else None)
+        self.backbone = nn.Sequential(
+            resnet.conv1, resnet.bn1, resnet.relu, resnet.maxpool,
+            resnet.layer1, resnet.layer2, resnet.layer3, resnet.layer4
+        )
 
-        # Son katmanı değiştir (Dropout eklendi)
-        self.model.fc = nn.Sequential(
-            nn.Dropout(p=0.0),
+        in_features = 2048
+
+        # Transformer Attention Katmanı
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=in_features, nhead=8, dim_feedforward=2048,
+            dropout=0.1, activation='gelu', batch_first=True
+        )
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=1)
+
+        self.gap = nn.AdaptiveAvgPool2d((1, 1))
+        self.classifier = nn.Sequential(
+            nn.Dropout(p=0.5),
             nn.Linear(in_features, num_classes)
         )
 
     def forward(self, x):
-        return self.model(x)
+        features = self.backbone(x)
+        B, C, H, W = features.shape
+        tokens = features.view(B, C, -1).permute(0, 2, 1)
+
+        attended_tokens = self.transformer(tokens)
+
+        features_attended = attended_tokens.permute(0, 2, 1).view(B, C, H, W)
+        pooled = self.gap(features_attended).flatten(1)
+        out = self.classifier(pooled)
+        return out
 
 
 def get_model(model_name: str, num_classes: int, model_size: Optional[str] = None,
@@ -111,20 +123,19 @@ def get_model(model_name: str, num_classes: int, model_size: Optional[str] = Non
 
     if model_name == 'convnext':
         size = model_size or 'tiny'
-        return ConvNeXTModel(num_classes, size, pretrained)
+        return ConvNeXTModel(num_classes, size, pretrained)  # type: ignore (eğer yukarıda tanımlıysa)
 
     elif model_name == 'mobilenet':
         size = model_size or 'large'
-        return MobileNetModel(num_classes, size, pretrained)
+        return MobileNetModel(num_classes, size, pretrained)  # type: ignore
 
     elif model_name == 'efficientnet':
         size = model_size or 's'
-        return EfficientNetV2Model(num_classes, size, pretrained)
+        return EfficientNetV2Model(num_classes, size, pretrained)  # type: ignore
 
     elif model_name == 'resnet':
-        size = model_size or '50'
-        return ResNetModel(num_classes, size, pretrained)
+        # Yeni Hybrid Mimariyi çağırıyoruz
+        return HybridResNetTransformer(num_classes, pretrained)
 
     else:
-        raise ValueError(f"Bilinmeyen model: {model_name}. "
-                         f"Kullanılabilir: 'convnext', 'mobilenet', 'efficientnet', 'resnet'")
+        raise ValueError(f"Bilinmeyen model: {model_name}")

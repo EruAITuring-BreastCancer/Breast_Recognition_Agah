@@ -5,8 +5,8 @@ Model eğitimi, validasyon ve test fonksiyonları.
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import ReduceLROnPlateau
 from tqdm import tqdm
 import numpy as np
 from pathlib import Path
@@ -17,6 +17,28 @@ from sklearn.metrics import classification_report, confusion_matrix, f1_score
 import seaborn as sns
 
 
+class DALLoss(nn.Module):
+    def __init__(self, alpha=1.0, weight=None):
+        super().__init__()
+        self.alpha = alpha
+        self.weight = weight
+        # 0,1,2,3 indekslerinin gerçek BI-RADS karşılıkları: [1, 2, 4, 5]
+        self.birads_mapping = torch.tensor([1.0, 2.0, 4.0, 5.0])
+
+    def forward(self, logits, targets):
+        self.birads_mapping = self.birads_mapping.to(logits.device)
+        if self.weight is not None:
+            self.weight = self.weight.to(logits.device)
+
+        ce_loss = F.cross_entropy(logits, targets, weight=self.weight, reduction='none')
+
+        probs = F.softmax(logits, dim=1)
+        expected_birads = torch.sum(probs * self.birads_mapping, dim=1)
+        true_birads = self.birads_mapping[targets]
+
+        distance_penalty = (expected_birads - true_birads) ** 2
+        total_loss = ce_loss * (1.0 + self.alpha * distance_penalty)
+        return total_loss.mean()
 
 class Trainer:
     """Model eğitimi için ana sınıf."""
@@ -59,7 +81,7 @@ class Trainer:
         # Loss fonksiyonu (class_weights ile)
         if class_weights is not None:
             class_weights = class_weights.to(device)
-        self.criterion = nn.CrossEntropyLoss(weight=class_weights)
+        self.criterion = DALLoss(alpha=1.0, weight=class_weights)
         # Optimizer
         self.optimizer = optim.SGD(
             model.parameters(),
