@@ -1,65 +1,74 @@
 import pandas as pd
 import os
 import re
-
-# Yolları Tanımlayalım
-base_dir = "/media/agah/Sata/Breast_veriler/"
-image_folder = os.path.join(base_dir, "Teknofest_Breast_PNG/PNG_Görüntüler/")
-input_csv = os.path.join(base_dir, "Etiketler/nihai_egitim_verisi.csv")  # Elindeki CSV
-output_csv = os.path.join(base_dir, "Etiketler/teknofest_final_master.csv")
+import glob
 
 
-def create_exact_path_csv():
-    if not os.path.exists(input_csv):
-        print(f"❌ CSV dosyası bulunamadı: {input_csv}")
-        return
+def create_3class_dataset():
+    # 1. Dosya Yolları
+    excel1_path = "/media/agah/Sata/Breast_veriler/Etiketler/Supplementary_TRAIN1.xlsx"
+    excel2_path = "/media/agah/Sata/Breast_veriler/Etiketler/Supplementary_TRAIN2.xlsx"
+    yeni_csv = "/media/agah/Sata/Breast_veriler/Etiketler/uclu_siniflandirma_etiketleri.csv"
+    yeni_base_dir = "/media/agah/Sata/Breast_veriler/Teknofest_Breast_PNG_Kirpilmis/PNG_Görüntüler/"
 
-    # 1. CSV'yi oku ve CaseNumber'ı temizle (822670189.0 -> 822670189)
-    df_labels = pd.read_csv(input_csv)
-    df_labels.columns = df_labels.columns.str.strip()
-    df_labels['CaseNumber'] = pd.to_numeric(df_labels['CaseNumber'], errors='coerce').fillna(0).astype(int).astype(str)
+    print("Excel dosyaları okunuyor...")
+    df1 = pd.read_excel(excel1_path)
+    df2 = pd.read_excel(excel2_path)
+    df = pd.concat([df1, df2], ignore_index=True)
 
-    # 2. Klasördeki gerçek dosya isimlerini al (Sadece isimleri okur, resimleri açmaz)
-    print("🔍 Gerçek dosya isimleri taranıyor...")
-    all_files = [f for f in os.listdir(image_folder) if f.lower().endswith('.png')]
-
-    file_data = []
-    # Dosya isminin içindeki 7-12 haneli vaka numarasını bulacak kural
-    pattern = re.compile(r'(\d{7,12})')
-
-    for filename in all_files:
-        match = pattern.search(filename)
+    # 2. Akıllı Üçlü Sınıflandırma (İçindeki sayıyı ayıklar)
+    def map_birads(birads_val):
+        match = re.search(r'\d+', str(birads_val))
         if match:
-            case_id = match.group(1)
-            file_data.append({
-                'CaseNumber': str(case_id),
-                'image_path': os.path.join(image_folder, filename)  # Dosya ismi neyse onu kullanır
-            })
+            val = int(match.group())
+            if val == 0:
+                return 0
+            elif val in [1, 2]:
+                return 1
+            elif val in [4, 5]:
+                return 2
+        return None
 
-    df_files = pd.DataFrame(file_data)
+    df['label'] = df['BIRADS CATEGORY'].apply(map_birads)
+    df = df.dropna(subset=['label'])
 
-    if df_files.empty:
-        print("❌ Klasörde hiçbir PNG dosyası bulunamadı veya ID'ler okunamadı.")
-        return
+    # 3. Hızlı arama için CASENUMBER -> Label sözlüğü oluştur
+    # (Hasta numaralarını string yapıyoruz ki metin eşleştirmesinde hata çıkmasın)
+    label_dict = dict(zip(df['CASENUMBER'].astype(str), df['label'].astype(int)))
 
-    # 3. CSV'deki etiketlerle, klasördeki gerçek yolları birleştir
-    final_df = pd.merge(df_files, df_labels, on='CaseNumber', how='inner')
+    print(f"Excel'den {len(label_dict)} benzersiz hasta numarası (CASENUMBER) etiketlendi.")
+    print("\nKırpılmış resim klasörü taranıyor ve hastalarla eşleştiriliyor...")
 
-    # 4. İhtiyacımız olan sütunları seç ve kaydet
-    final_df = final_df[['image_path', 'BI_RADS', 'CaseNumber']]
-    final_df.to_csv(output_csv, index=False)
+    # 4. Gerçek Resimleri Tarayıp Eşleştir
+    resim_yollari = glob.glob(os.path.join(yeni_base_dir, "*.png"))
+    eslesen_veriler = []
 
-    print("\n--- İŞLEM SONUCU ---")
-    print(f"📊 Toplam eşleşen ve oluşturulan satır sayısı: {len(final_df)}")
+    for yol in resim_yollari:
+        dosya_adi = os.path.basename(yol)
 
-    if not final_df.empty:
-        print(f"💾 Kayıt yeri: {output_csv}")
-        print("\nÖrnek Çıktılar (Gerçek dosya yolları):")
-        for path in final_df['image_path'].head(3):
-            print(path)
-    else:
-        print("⚠️ HATA: Dosya isimleri tarandı ama CSV'deki numaralarla eşleşmedi.")
+        # Dosya adının içindeki 7 veya daha uzun basamaklı o ana CASENUMBER'ı bulur
+        # Örn: MG_EGITIM_1_825898305_LMLO.png -> 825898305
+        match = re.search(r'(\d{7,})', dosya_adi)
+
+        if match:
+            casenumber = match.group(1)
+
+            # Eğer resimdeki hasta numarası Excel'de varsa, CSV'ye eklenecek listeye koy
+            if casenumber in label_dict:
+                eslesen_veriler.append({
+                    'image_path': yol,
+                    'label': label_dict[casenumber]
+                })
+
+    # 5. Yeni CSV'yi Oluştur
+    son_df = pd.DataFrame(eslesen_veriler)
+    son_df.to_csv(yeni_csv, index=False)
+
+    print(f"\nİşlem başarıyla tamamlandı!")
+    print(f"Klasördeki {len(son_df)} adet gerçek kırpılmış resim '{yeni_csv}' dosyasına kaydedildi.")
+    print("\nYeni Sınıf Dağılımı:")
+    print(son_df['label'].value_counts().sort_index())
 
 
-if __name__ == "__main__":
-    create_exact_path_csv()
+if __name__ == '__main__':
+    create_3class_dataset()

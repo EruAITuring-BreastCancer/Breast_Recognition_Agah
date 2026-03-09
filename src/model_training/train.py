@@ -56,6 +56,7 @@ class Trainer:
             weight_decay: float = 1e-4,
             output_dir: str = 'outputs',
             num_epochs: int = 30  # <--- YENİ EKLENDİ (Scheduler için gerekli)
+
     ):
         """
         Args:
@@ -83,19 +84,23 @@ class Trainer:
             class_weights = class_weights.to(device)
         self.criterion = DALLoss(alpha=1.0, weight=class_weights)
         # Optimizer
-        self.optimizer = optim.SGD(
+        """self.optimizer = optim.SGD(
             model.parameters(),
             lr=learning_rate,
             momentum=0.9,
             weight_decay=weight_decay
+        )"""
+        self.optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+
+        # GÜNCELLENDİ: Makaleye göre ReduceLROnPlateau kullanıyoruz (Val F1 skoru takibi için mode='max')
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            self.optimizer, mode='max', factor=0.5, patience=2
         )
 
-        # Learning rate scheduler (CosineAnnealingLR'a geçildi)
-        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
-            self.optimizer,
-            T_max=num_epochs,
-            eta_min=1e-6
-        )
+        # YENİ EKLENDİ: Early Stopping değişkenleri
+        self.early_stop_patience = 5
+        self.epochs_no_improve = 0
+        self.early_stop_triggered = False
 
         # Eğitim geçmişi
         self.history = {
@@ -112,6 +117,7 @@ class Trainer:
         self.best_val_acc = 0.0
         self.best_val_f1 = 0.0
         self.best_epoch = 0
+        self.start_epoch = 0
 
         print(f"\n=== Trainer Başlatıldı ===")
         print(f"Device: {device}")
@@ -208,12 +214,16 @@ class Trainer:
     def train(self, num_epochs: int, save_best: bool = True) -> Dict:
         print(f"\n=== Eğitim Başlıyor ({num_epochs} epoch) ===\n")
 
-        for epoch in range(num_epochs):
-            train_loss, train_acc, train_f1 = self.train_epoch(epoch)
+        for epoch in range(self.start_epoch, self.start_epoch + num_epochs):
+            # YENİ: Early stopping tetiklendiyse döngüyü kır
+            if self.early_stop_triggered:
+                break
 
+            train_loss, train_acc, train_f1 = self.train_epoch(epoch)
             val_loss, val_acc, val_f1 = self.validate(epoch)
 
-            self.scheduler.step()
+            # GÜNCELLENDİ: ReduceLROnPlateau, içerisine takip edeceği metriği (val_f1) ister
+            self.scheduler.step(val_f1)
             current_lr = self.optimizer.param_groups[0]['lr']
 
             self.history['train_loss'].append(train_loss)
@@ -224,7 +234,7 @@ class Trainer:
             self.history['val_f1'].append(val_f1)
             self.history['learning_rates'].append(current_lr)
 
-            print(f"\nEpoch {epoch + 1}/{num_epochs}")
+            print(f"\nEpoch {epoch + 1}/{self.start_epoch + num_epochs}")
             print(f"  Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}% | Train F1: {train_f1:.2f}%")
             print(f"  Val Loss:   {val_loss:.4f} | Val Acc:   {val_acc:.2f}% | Val F1:   {val_f1:.2f}%")
             print(f"  Learning Rate: {current_lr:.6f}")
@@ -233,24 +243,30 @@ class Trainer:
                 self.best_val_f1 = val_f1
                 self.best_val_acc = val_acc
                 self.best_epoch = epoch
+                self.epochs_no_improve = 0  # YENİ: İyileşme varsa sayacı sıfırla
                 print(f"  ✓ Yeni en iyi model! (Val F1: {val_f1:.2f}%, Val Acc: {val_acc:.2f}%)")
 
                 if save_best:
                     self.save_checkpoint(
                         epoch,
-                        filename=f'{self.model_name}_best_model.pth',  # <--- GÜNCELLENDİ
+                        filename=f'{self.model_name}_best_model.pth',
                         is_best=True
                     )
+            else:
+                # YENİ: İyileşme yoksa sayacı artır ve Early Stopping kontrolü yap
+                self.epochs_no_improve += 1
+                print(f"  Early Stopping Sayacı: {self.epochs_no_improve}/{self.early_stop_patience}")
+                if self.epochs_no_improve >= self.early_stop_patience:
+                    print(f"\n[!] Early Stopping tetiklendi! {self.early_stop_patience} epoch boyunca Val F1 artmadı.")
+                    self.early_stop_triggered = True
 
             print("-" * 60)
 
-            print(f"\n=== Eğitim Tamamlandı ===")
-            print(f"En iyi validation F1-score: {self.best_val_f1:.2f}% (Epoch {self.best_epoch + 1})")
-            print(f"En iyi validation accuracy: {self.best_val_acc:.2f}% (Epoch {self.best_epoch + 1})")
-
-        self.save_checkpoint(num_epochs - 1, filename=f'{self.model_name}_last_model.pth')  # <--- GÜNCELLENDİ
+        self.save_checkpoint(self.start_epoch + num_epochs - 1, filename=f'{self.model_name}_last_model.pth')
 
         self.plot_history()
+
+        self.start_epoch += num_epochs
 
         return self.history
 
@@ -278,6 +294,7 @@ class Trainer:
         self.best_val_acc = checkpoint['best_val_acc']
         self.best_val_f1 = checkpoint.get('best_val_f1', 0.0)
         self.history = checkpoint['history']
+        self.start_epoch = checkpoint['epoch'] + 1  # <--- YENİ EKLENDİ
 
         print(f"Checkpoint yüklendi: {filepath}")
         print(f"  Epoch: {checkpoint['epoch']}")

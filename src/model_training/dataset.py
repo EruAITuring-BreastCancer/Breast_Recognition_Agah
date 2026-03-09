@@ -54,26 +54,19 @@ class CustomImageDataset(Dataset):
 
 def get_train_transforms(image_size: int = 224) -> transforms.Compose:
     return transforms.Compose([
-        CLAHE_Transform(clip_limit=2.0),  # <-- CLAHE EKLENDİ
-        transforms.RandomResizedCrop(image_size, scale=(0.8, 1.0)),
+        transforms.Resize((224, 224)),
         transforms.RandomHorizontalFlip(p=0.5),
-        transforms.RandomVerticalFlip(p=0.2),
-        transforms.RandomRotation(degrees=15),
-        transforms.ColorJitter(brightness=0.1, contrast=0.1),
+        transforms.RandomRotation(degrees=10),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
-
 
 def get_val_transforms(image_size: int = 224) -> transforms.Compose:
     return transforms.Compose([
-        CLAHE_Transform(clip_limit=2.0),  # <-- CLAHE EKLENDİ
-        transforms.Resize(int(image_size * 1.14)),
-        transforms.CenterCrop(image_size),
+        transforms.Resize((224, 224)),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
-
 
 def calculate_class_weights(labels: List[int], num_classes: int) -> torch.Tensor:
     class_counts = Counter(labels)

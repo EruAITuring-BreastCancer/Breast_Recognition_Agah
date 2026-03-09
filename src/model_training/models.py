@@ -1,6 +1,7 @@
 import torch.nn as nn
 from torchvision import models
 from typing import Optional
+import torch
 
 
 class ConvNeXTModel(nn.Module):
@@ -117,10 +118,57 @@ class HybridResNetTransformer(nn.Module):
         return out
 
 
+class PaperHybridResNetTransformer(nn.Module):
+    def __init__(self, num_classes: int = 4, pretrained: bool = True):
+        super().__init__()
+
+        # 2.3.1 Backbone Network: ResNet-50
+        resnet = models.resnet50(weights='IMAGENET1K_V1' if pretrained else None)
+        self.backbone = nn.Sequential(
+            resnet.conv1, resnet.bn1, resnet.relu, resnet.maxpool,
+            resnet.layer1, resnet.layer2, resnet.layer3, resnet.layer4
+        )
+
+        # 2.3.2 Transformer-based Feature Fusion
+        self.projection = nn.Conv2d(2048, 128, kernel_size=1)
+        self.num_patches = 7 * 7
+        self.pos_embedding = nn.Parameter(torch.randn(1, self.num_patches, 128))
+
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=128, nhead=8, dim_feedforward=512,
+            dropout=0.1, activation='gelu', batch_first=True
+        )
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=1)
+
+        # 2.3.4 Classification Head
+        self.classifier = nn.Sequential(
+            nn.Linear(128, 512),
+            nn.ReLU(),
+            nn.Dropout(p=0.5),
+            nn.Linear(512, 128),
+            nn.ReLU(),
+            nn.Dropout(p=0.3),
+            nn.Linear(128, num_classes)
+        )
+
+    def forward(self, x):
+        x = self.backbone(x)
+        x = self.projection(x)
+
+        B, C, H, W = x.shape
+        x = x.view(B, C, -1).permute(0, 2, 1)
+        x = x + self.pos_embedding
+        x = self.transformer(x)
+        x = x.mean(dim=1)
+        x = self.classifier(x)
+        return x
+
+
 def get_model(model_name: str, num_classes: int, model_size: Optional[str] = None,
               pretrained: bool = True) -> nn.Module:
     model_name = model_name.lower()
-
+    import os
+    os.environ['TORCH_HOME'] = '/media/agah/Sata/torch_cache'  # PyTorch önbellek dizini
     if model_name == 'convnext':
         size = model_size or 'tiny'
         return ConvNeXTModel(num_classes, size, pretrained)  # type: ignore (eğer yukarıda tanımlıysa)
@@ -136,6 +184,9 @@ def get_model(model_name: str, num_classes: int, model_size: Optional[str] = Non
     elif model_name == 'resnet':
         # Yeni Hybrid Mimariyi çağırıyoruz
         return HybridResNetTransformer(num_classes, pretrained)
+
+    elif model_name == 'paper_hybrid':
+        return PaperHybridResNetTransformer(num_classes, pretrained)
 
     else:
         raise ValueError(f"Bilinmeyen model: {model_name}")

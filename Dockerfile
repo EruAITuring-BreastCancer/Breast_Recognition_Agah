@@ -11,6 +11,7 @@ WORKDIR /app
 
 RUN pip install --upgrade pip
 COPY requirements.txt .
+RUN DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y libglib2.0-0 libgl1-mesa-glx
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .

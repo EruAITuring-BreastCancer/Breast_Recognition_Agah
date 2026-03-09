@@ -10,3 +10,4 @@ deap
 gdown
 scikit-learn
 opencv-python-headless
+ultralytics

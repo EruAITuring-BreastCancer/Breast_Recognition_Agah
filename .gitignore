@@ -51,3 +51,14 @@ models/
 *.h5
 *.pth
 *.pt
+/outputs/
+/outputs_CC_results/
+/outputs_MLO_results/
+/outputs_UNIFIED_results/
+/runs/
+/yolo26l-cls.pt
+/yolo26n.pt
+/yolo26n-cls.pt
+/yolov8n.pt
+/yolov8x.pt
+/data/

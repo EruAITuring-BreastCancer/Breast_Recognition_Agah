@@ -8,21 +8,20 @@ from pathlib import Path
 
 def main():
     CONFIG = {
-        'model_name': 'resnet',
+        'model_name': 'paper_hybrid',
         'model_size': '50',  # Bu otomatik olarak Hybrid modele yönlendirecek
         'num_classes': 4,
         'pretrained': True,
         'image_size': 224,
-        'batch_size': 32,
+        'batch_size': 64,
 
-        # Disk kopmalarını önlemek için düşük tutuldu
-        'num_workers': 8,
+        'num_workers': 4,
 
         'use_weighted_sampler': False,
-        'num_epochs': 50,
+        'num_epochs': 60,
         'learning_rate': 1e-3,
         'weight_decay': 1e-4,
-        'csv_path': '/media/agah/Sata/Breast_veriler/Etiketler/teknofest_final_master.csv',
+        'csv_path': '/media/agah/Sata/Breast_veriler/Etiketler/kirpilmis_etiketler.csv',
         'seed': 42
     }
 
@@ -60,25 +59,72 @@ def main():
     print(f"\n[2/4] Hibrit Model oluşturuluyor...")
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    model = get_model(
+    """model = get_model(
         model_name=CONFIG['model_name'],
         num_classes=CONFIG['num_classes'],
         model_size=CONFIG['model_size'],
         pretrained=CONFIG['pretrained']
-    )
+    )"""
+
+    model = get_model('paper_hybrid', num_classes=data_info['num_classes']).to(device)
 
     print(f"\n[3/4] Birleşik (Unified) Eğitim başlatılıyor...")
     dynamic_model_name = f"{CONFIG['model_name']}_UNIFIED"
 
-    trainer = Trainer(
+    # ==========================================
+    # AŞAMA 1: Feature Adaptation Phase
+    # ==========================================
+    print("\n--- STAGE 1: Feature Adaptation (Backbone Frozen) ---")
+    for param in model.backbone.parameters(): param.requires_grad = False
+
+    for param in model.projection.parameters(): param.requires_grad = True
+    model.pos_embedding.requires_grad = True
+    for param in model.transformer.parameters(): param.requires_grad = True
+    for param in model.classifier.parameters(): param.requires_grad = True
+
+    # GÜNCELLENDİ: Makaleye göre ilk aşama sadece 4 epoch
+    stage1_epochs = 15
+    trainer_stage1 = Trainer(
         model=model, train_loader=train_loader, val_loader=val_loader,
-        num_classes=data_info['num_classes'], model_name=dynamic_model_name,
-        class_weights=data_info['class_weights'] if CONFIG['use_weighted_sampler'] else None,
-        device=device, learning_rate=CONFIG['learning_rate'], weight_decay=CONFIG['weight_decay'],
-        output_dir=current_output_dir, num_epochs=CONFIG['num_epochs']
+        num_classes=data_info['num_classes'], model_name="HybridResNet_Stage1",
+        device=device, learning_rate=1e-4,
+        weight_decay=CONFIG.get('weight_decay', 1e-4),
+        output_dir=current_output_dir, num_epochs=stage1_epochs
     )
 
-    history = trainer.train(num_epochs=CONFIG['num_epochs'], save_best=True)
+    trainer_stage1.train(num_epochs=stage1_epochs, save_best=True)
+
+    # ==========================================
+    # AŞAMA 2: Fine-Tuning Phase
+    # ==========================================
+    print("\n--- STAGE 2: Fine-Tuning (Unfreezing Layer 3 & 4) ---")
+    for param in model.backbone[6].parameters(): param.requires_grad = True
+    for param in model.backbone[7].parameters(): param.requires_grad = True
+
+    # GÜNCELLENDİ: Makaleye göre ince ayar 60 epoch ve 1e-5 learning rate
+    stage2_epochs = 60
+    stage2_lr = 1e-5
+
+    # İkinci aşama için optimizer'ı yeni LR ile kur
+    trainer_stage1.optimizer = torch.optim.Adam(
+        filter(lambda p: p.requires_grad, model.parameters()),
+        lr=stage2_lr, weight_decay=CONFIG.get('weight_decay', 1e-4)
+    )
+
+    # GÜNCELLENDİ: İkinci aşama için Scheduler'ı da baştan kur (ReduceLROnPlateau)
+    trainer_stage1.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        trainer_stage1.optimizer, mode='max', factor=0.5, patience=2
+    )
+
+    # GÜNCELLENDİ: Early stopping sayaçlarını yeni aşama için sıfırla
+    trainer_stage1.early_stop_triggered = False
+    trainer_stage1.epochs_no_improve = 0
+
+    trainer_stage1.model_name = "HybridResNet_Stage2"
+
+    # Eğitime Stage 2 ayarlarla devam et
+    trainer_stage1.train(num_epochs=stage2_epochs, save_best=True)
+
 
     print(f"\n[4/4] Unified model test ediliyor...")
     best_model_path = Path(current_output_dir) / f"{dynamic_model_name}_best_model.pth"
