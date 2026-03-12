@@ -4,3 +4,16 @@ venv
 __pycache__
 *.pyc
 .idea
+.git
+.venv
+venv
+__pycache__
+*.pyc
+.idea
+# Çıktılar, Modeller ve Veri Setleri
+outputs/
+models/
+*.pth
+*.pt
+datasets/
+data/

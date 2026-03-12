@@ -9,21 +9,21 @@ from pathlib import Path
 
 def main():
     CONFIG = {
-        'model_name': 'convnext',
-        'model_size': 'tiny',
-        'num_classes': 4,
+        'model_name': 'densenet',
+        'model_size': '121',
+        'num_classes': 3,
         'pretrained': True,
 
         'image_size': 224,
         'batch_size': 32,
-        'num_workers': 4,
+        'num_workers': 6,
         'use_weighted_sampler': True,
 
-        'num_epochs': 30,
-        'learning_rate': 1e-3,
+        'num_epochs': 75,
+        'learning_rate': 3e-4,
         'weight_decay': 1e-4,
 
-        'csv_path': '/media/agah/Sata/Breast_veriler/Etiketler/master_dataset_local.csv',  # CSV dosyasının yolu
+        'csv_path': '/media/agah/Sata/Breast_veriler/Etiketler/uclu_siniflandirma_etiketleri.csv',  # CSV dosyasının yolu
 
         'output_dir': 'outputs',
         'seed': 42
@@ -115,7 +115,7 @@ def main():
         print(f"✓ En iyi model yüklendi (Epoch {checkpoint['epoch'] + 1})")
 
     # Modeli test et
-    class_names = ['BIRADS-1', 'BIRADS-2', 'BIRADS-4', 'BIRADS-5']
+    class_names = ['Sinif 0 (BI-RADS 0)', 'Sinif 1 (BI-RADS 1-2)', 'Sinif 2 (BI-RADS 4-5)']
     test_results = test_model(
         model=model,
         test_loader=test_loader,

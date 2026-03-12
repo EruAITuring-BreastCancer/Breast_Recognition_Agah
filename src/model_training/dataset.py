@@ -22,7 +22,15 @@ class CustomImageDataset(Dataset):
         return len(self.image_paths)
 
     def __getitem__(self, idx):
-        image = Image.open(self.image_paths[idx]).convert('RGB')
+        try:
+            # Görüntüyü okumayı dene
+            image = Image.open(self.image_paths[idx]).convert('RGB')
+        except Exception as e:
+            # Eğer dosya bozuksa, terminale uyarısını bas ve bir sonraki resme atla
+            print(f"\n[!] Uyarı: Bozuk dosya atlandı -> {self.image_paths[idx]}")
+            new_idx = (idx + 1) % len(self.image_paths)
+            return self.__getitem__(new_idx)
+
         label = self.labels[idx]
 
         if self.transform:
@@ -39,19 +47,11 @@ def get_train_transforms(image_size: int = 224) -> transforms.Compose:
         transforms.RandomVerticalFlip(p=0.2),
         transforms.RandomRotation(degrees=15),
 
-        transforms.ColorJitter(
-            brightness=0.2,
-            contrast=0.2,
-        ),
-        transforms.RandomAdjustSharpness(sharpness_factor=2, p=0.3),
-        transforms.RandomApply([
-            transforms.GaussianBlur(kernel_size=3) # CLAHE de kullanabiliriz ilk bunu deneyeyim sonra bakıcaz
-        ], p=0.2),
 
         transforms.ToTensor(),
         transforms.Normalize(
-            mean=[0.485, 0.456, 0.406],  # ImageNet ortalamaları
-            std=[0.229, 0.224, 0.225]  # ImageNet standart sapmaları
+            mean=[0.5, 0.5, 0.5],
+            std=[0.5, 0.5, 0.5]
         )
     ])
 
@@ -62,8 +62,8 @@ def get_val_transforms(image_size: int = 224) -> transforms.Compose:
         transforms.CenterCrop(image_size),
         transforms.ToTensor(),
         transforms.Normalize(
-            mean=[0.485, 0.456, 0.406],
-            std=[0.229, 0.224, 0.225]
+            mean=[0.5, 0.5, 0.5],
+            std=[0.5, 0.5, 0.5]
         )
     ])
 
@@ -143,8 +143,8 @@ def create_dataloaders(
         print(f"  Sınıf {class_idx}: {count} örnek ({percentage:.2f}%)")
 
     # Sınıf ağırlıklarını hesapla (loss için)
-    class_weights = calculate_class_weights(train_labels, num_classes)
-
+    # class_weights = calculate_class_weights(train_labels, num_classes)
+    class_weights = None
     # DataLoaders
     if use_weighted_sampler:
         sampler = get_weighted_sampler(train_labels)
@@ -188,29 +188,25 @@ def create_dataloaders(
 
 def prepare_and_split_data(csv_path: str, val_size: float = 0.15, test_size: float = 0.15, random_state: int = 42):
     """
-    CSV dosyasını okur, yolları doğrular, etiketleri mapler ve veri setini 3'e böler.
+    CSV dosyasını okur, yolları doğrular ve veri setini 3'e böler.
+    Artık etiketler (0,1,2) dönüştürülmüş olarak geldiği için doğrudan okunur.
     """
     print(f"CSV okunuyor: {csv_path}")
     df = pd.read_csv(csv_path)
-
-    # PyTorch etiketleri 0'dan başlamalıdır
-    label_map = {1: 0, 2: 1, 4: 2, 5: 3}
 
     image_paths = []
     labels = []
     missing_count = 0
 
     for index, row in df.iterrows():
-        img_path = row['image_path']
-        raw_label = row['birads_label']
-
-        if raw_label not in label_map:
-            continue
+        # YENİ HALİ: Artık yeni CSV'deki 'image_path' ve 'label' sütunlarını doğrudan çekiyoruz
+        img_path = str(row['image_path'])
+        raw_label = int(row['label'])
 
         # Harici diskte dosya gerçekten var mı kontrolü
         if os.path.exists(img_path):
             image_paths.append(img_path)
-            labels.append(label_map[raw_label])
+            labels.append(raw_label)
         else:
             missing_count += 1
 
@@ -224,7 +220,6 @@ def prepare_and_split_data(csv_path: str, val_size: float = 0.15, test_size: flo
     )
 
     # 2. Aşama: Kalanı Train ve Val olarak ayır
-    # val_size oranını, tüm veri üzerinden değil, kalan veri üzerinden hesaplamalıyız
     val_ratio_adjusted = val_size / (1.0 - test_size)
 
     train_paths, val_paths, train_labels, val_labels = train_test_split(
