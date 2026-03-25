@@ -9,5 +9,5 @@ scikit-learn>=1.2.0
 deap
 gdown
 scikit-learn
-opencv-python-headless
-ultralytics
+#opencv-python-headless
+#ultralytics

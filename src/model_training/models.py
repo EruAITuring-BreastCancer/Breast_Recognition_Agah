@@ -164,6 +164,38 @@ class PaperHybridResNetTransformer(nn.Module):
         return x
 
 
+class DenseNetModel(nn.Module):
+    """RadImageNet Ağırlıklı DenseNet121"""
+
+    def __init__(self, num_classes: int, model_size: str = '121', pretrained: bool = True):
+        super(DenseNetModel, self).__init__()
+
+        if model_size == '121':
+            self.model = models.densenet121(weights=None)
+            in_features = 1024
+        else:
+            raise ValueError(f"Geçersiz model boyutu: {model_size}. Sadece '121' desteklenmektedir.")
+
+        if pretrained:
+            weight_path = '/app/medical_weights/DenseNet121.pt'
+            import os
+            if os.path.exists(weight_path):
+                state_dict = torch.load(weight_path, map_location='cpu')
+                # RadImageNet'in orijinal sınıflandırıcı katmanını atlayıp sadece gövdeyi alıyoruz
+                state_dict = {k: v for k, v in state_dict.items() if not k.startswith('classifier')}
+                self.model.load_state_dict(state_dict, strict=False)
+                print(f"✓ RadImageNet DenseNet{model_size} ağırlıkları başarıyla yüklendi.")
+            else:
+                print(f"Uyarı: {weight_path} ağırlık dosyası bulunamadı. Rastgele ağırlıklarla başlanıyor!")
+
+        # Yeni veri setine uygun sınıflandırıcı başlık (Overfitting'i önlemek için Dropout içerir)
+        self.model.classifier = nn.Sequential(
+            nn.Linear(in_features,num_classes)
+        )
+
+    def forward(self, x):
+        return self.model(x)
+
 def get_model(model_name: str, num_classes: int, model_size: Optional[str] = None,
               pretrained: bool = True) -> nn.Module:
     model_name = model_name.lower()
@@ -187,6 +219,9 @@ def get_model(model_name: str, num_classes: int, model_size: Optional[str] = Non
 
     elif model_name == 'paper_hybrid':
         return PaperHybridResNetTransformer(num_classes, pretrained)
+
+    elif model_name == 'densenet':
+        return DenseNetModel(num_classes, model_size, pretrained)
 
     else:
         raise ValueError(f"Bilinmeyen model: {model_name}")

@@ -1,5 +1,4 @@
 import torch
-import cv2
 import numpy as np
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from torchvision import transforms
@@ -11,19 +10,6 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 
 
-# --- YENİ: CLAHE FİLTRESİ ---
-class CLAHE_Transform:
-    def __init__(self, clip_limit=2.0, tile_grid_size=(8, 8)):
-        self.clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=tile_grid_size)
-
-    def __call__(self, img):
-        img_np = np.array(img)
-        lab = cv2.cvtColor(img_np, cv2.COLOR_RGB2LAB)
-        l, a, b = cv2.split(lab)
-        cl = self.clahe.apply(l)
-        limg = cv2.merge((cl, a, b))
-        final_img = cv2.cvtColor(limg, cv2.COLOR_LAB2RGB)
-        return Image.fromarray(final_img)
 
 
 class CustomImageDataset(Dataset):
@@ -151,7 +137,7 @@ def prepare_and_split_data(csv_path: str, view_type: str = 'ALL', val_size: floa
 
     for index, row in df.iterrows():
         img_path = str(row['image_path'])
-        raw_label = row['BI_RADS']
+        raw_label = row['birads']
 
         if raw_label not in label_map:
             continue

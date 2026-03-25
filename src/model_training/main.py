@@ -13,15 +13,15 @@ def main():
         'num_classes': 4,
         'pretrained': True,
         'image_size': 224,
-        'batch_size': 64,
+        'batch_size': 8,
 
         'num_workers': 4,
 
         'use_weighted_sampler': False,
-        'num_epochs': 60,
-        'learning_rate': 1e-3,
+        'num_epochs': 75,
+        'learning_rate': 1e-4,
         'weight_decay': 1e-4,
-        'csv_path': '/media/agah/Sata/Breast_veriler/Etiketler/kirpilmis_etiketler.csv',
+        'csv_path': '/media/agah/Sata/Breast_veriler/Etiketler/inbreast_final_master.csv',
         'seed': 42
     }
 
@@ -83,7 +83,7 @@ def main():
     for param in model.classifier.parameters(): param.requires_grad = True
 
     # GÜNCELLENDİ: Makaleye göre ilk aşama sadece 4 epoch
-    stage1_epochs = 15
+    stage1_epochs = 4
     trainer_stage1 = Trainer(
         model=model, train_loader=train_loader, val_loader=val_loader,
         num_classes=data_info['num_classes'], model_name="HybridResNet_Stage1",
