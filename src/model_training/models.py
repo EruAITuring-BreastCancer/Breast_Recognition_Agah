@@ -188,27 +188,7 @@ class DenseNetModel(nn.Module):
         in_features = self.model.classifier.in_features
         self.model.classifier = nn.Sequential(
 
-            nn.Linear(in_features, 768),
-            nn.BatchNorm1d(768),
-            nn.ReLU(),
-            nn.Dropout(p=0.4),
-
-            nn.Linear(768, 512),
-            nn.BatchNorm1d(512),
-            nn.ReLU(),
-            nn.Dropout(p=0.3),
-
-            nn.Linear(512, 256),
-            nn.BatchNorm1d(256),
-            nn.ReLU(),
-            nn.Dropout(p=0.2),
-
-            nn.Linear(256, 128),
-            nn.BatchNorm1d(128),
-            nn.ReLU(),
-            nn.Dropout(p=0.1),
-
-            nn.Linear(128, num_classes)
+            nn.Linear(in_features, num_classes)
         )
 
     def forward(self, x):

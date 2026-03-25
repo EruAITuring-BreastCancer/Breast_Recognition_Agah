@@ -11,15 +11,15 @@ def main():
     CONFIG = {
         'model_name': 'densenet',
         'model_size': '121',
-        'num_classes': 3,
+        'num_classes': 2,
         'pretrained': True,
 
         'image_size': 224,
         'batch_size': 32,
         'num_workers': 6,
-        'use_weighted_sampler': True,
+        'use_weighted_sampler': False,
 
-        'num_epochs': 75,
+        'num_epochs': 50,
         'learning_rate': 3e-4,
         'weight_decay': 1e-4,
 
